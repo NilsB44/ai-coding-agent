@@ -2,6 +2,7 @@ import os
 import sys
 from openai import OpenAI
 from pydantic import BaseModel, Field
+from typing import Optional, Literal
 from tools import read_file, validate_python_code
 
 client = OpenAI(
@@ -11,7 +12,14 @@ client = OpenAI(
 
 class CodeUpdate(BaseModel):
     thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
-    new_code: str = Field(description="The exact valid Python code to append to the file.")
+    action: Literal["append", "replace"] = Field(description="Whether to append new code or replace existing code.")
+
+    # "search_text" is only needed for replacement
+    search_text: Optional[str] = Field(description="The exact code block to be replaced (required if action is 'replace').")
+    
+    # "new_code" is the replacement code OR the new code to append
+    new_code: str = Field(description="The new code to insert.")
+
 
 def main():
     target_file = "sandbox/math_lib.py"
@@ -37,13 +45,22 @@ def main():
         current_content = "# Math Library\n"
 
     # Initialize Chat History
+
+    system_prompt = f"""
+    You are an expert Python engineer. 
+    Your task is to modify the provided code file based on the user's request.
+    
+    Current File Content:
+    {current_content}
+    
+    INSTRUCTIONS:
+    1. If you are adding new functionality, set action="append".
+    2. If you are fixing a bug or updating existing code, set action="replace".
+    3. For "replace", `search_text` must match the existing code EXACTLY (whitespace and all).
+    """
+
     messages = [
-        {"role": "system", "content": f"""
-        You are an expert Python engineer. 
-        Your task is to append new functionality to the provided code file based on the user's request.
-        Current File Content:
-        {current_content}
-        """},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_request}
     ]
 
@@ -62,17 +79,22 @@ def main():
         result = completion.choices[0].message.parsed
         print(f"📝 Generated Code:\n{result.new_code}")
 
-        # --- SAFETY CHECK: EMPTY CODE ---
-        if not result.new_code.strip():
-            print("⛔ Error: The agent returned empty code.")
-            messages.append({"role": "assistant", "content": ""}) 
-            messages.append({"role": "user", "content": "You returned empty code. Please write the actual Python code."})
-            continue # Skip validation and try again
-        # --------------------------------
+        if result.action == "append":
+            proposed_content = current_content + "\n\n" + result.new_code
+        
+        elif result.action == "replace":
+            # Check if we can actually find the text
+            if result.search_text not in current_content:
+                print(f"⛔ Error: Could not find the code block to replace.\nSearch text was:\n{result.search_text}")
+                # Feedback to the LLM
+                messages.append({"role": "assistant", "content": result.model_dump_json()})
+                messages.append({"role": "user", "content": "I could not find that exact code in the file. Please provide the EXACT `search_text` from the file to replace."})
+                continue # Retry
+            
+            # Perform the replacement
+            proposed_content = current_content.replace(result.search_text, result.new_code)
 
-        # Validate
-        proposed_content = current_content + "\n\n" + result.new_code
-
+        # Validate (Same as before)
         is_valid, error_msg = validate_python_code(proposed_content)
 
         if is_valid:
