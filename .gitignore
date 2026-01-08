@@ -1,12 +1,6 @@
-# Ignore the virtual environment
 venv/
-
-# Ignore environment variables (NEVER commit your API key)
-.env
-
-# Ignore python cache files
 __pycache__/
 *.pyc
-
-# Optional: Ignore the sandbox if you treat it as temporary
-sandbox/
+.env
+sandbox/test_temp.py
+.pytest_cache/

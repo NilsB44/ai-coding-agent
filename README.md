@@ -21,3 +21,19 @@ An autonomous coding assistant that runs locally using **Ollama (Llama 3)**.
     ```bash
     python agent/main.py
     ```
+
+## Architecture
+```mermaid
+graph TD
+    User([👤 User Request]) --> Router[📍 Router];
+    Router --> Surgeon[🤖 Surgeon Agent];
+    
+    subgraph "Self-Healing Loop"
+        Surgeon -->|Writes Code| Validator[🛡️ Syntax Validator];
+        Validator -->|❌ Error| Surgeon;
+        Validator -->|✅ Valid| TestRunner[🧪 Pytest Runner];
+        TestRunner -->|❌ Fail| Surgeon;
+    end
+    
+    TestRunner -->|✅ Pass| Review[👀 Human Review];
+    Review -->|Yes| Save[💾 Save to Disk];

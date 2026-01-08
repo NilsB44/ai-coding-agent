@@ -1,13 +1,13 @@
 import os
 import sys
-import glob # <--- NEW: To list files
+import glob 
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from dotenv import load_dotenv
 
 # Import tools
-from tools import read_file, validate_python_code, show_diff, get_file_tree
+from tools import read_file, validate_python_code, show_diff, get_file_tree, run_pytest, parse_llm_response
 
 load_dotenv()
 
@@ -27,13 +27,13 @@ class CodeUpdate(BaseModel):
     action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.") 
     search_text: Optional[str] = Field(description="Code to replace (for 'replace' action).")
     new_code: str = Field(description="The new code.")
+    test_code: Optional[str] = Field(description="A corresponding pytest unit test to verify this code works. (Optional)")
 
 # --- STEP 1: ROUTER ---
 
 def select_target_file(user_request: str) -> str:
     """Decides which file to edit based on the user request."""
     
-    # Get list of files in sandbox
     files = glob.glob("sandbox/*.py")
     file_list_str = "\n".join(files)
     
@@ -48,20 +48,23 @@ def select_target_file(user_request: str) -> str:
     """
     
     print("🤔 Routing request to correct file...")
-    completion = client.beta.chat.completions.parse(
-        model="llama3",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_request},
-        ],
-        response_format=FileSelection,
-    )
-    
-    result = completion.choices[0].message.parsed
-    print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
-    return result.file_name
+    try:
+        completion = client.beta.chat.completions.parse(
+            model="llama3",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_request},
+            ],
+            response_format=FileSelection,
+        )
+        result = completion.choices[0].message.parsed
+        print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
+        return result.file_name
+    except Exception as e:
+        print(f"Routing Error: {e}")
+        return "sandbox/error.py"
 
-# --- STEP 2: SURGEON (Your existing logic) ---
+# --- STEP 2: SURGEON ---
 
 def apply_changes(target_file: str, user_request: str):
     print(f"🤖 Agent starting on: {target_file}")
@@ -69,87 +72,110 @@ def apply_changes(target_file: str, user_request: str):
     # Handle New Files
     if not os.path.exists(target_file):
         print(f"✨ Creating new file: {target_file}")
-        current_content = ""
-        # Create empty file so we can read it
         with open(target_file, 'w') as f: f.write("")
+        current_content = ""
     else:
         current_content = read_file(target_file)
 
-    project_context = get_file_tree("sandbox")
+    import_name = target_file.replace("/", ".").replace(".py", "")
+    
+    system_prompt = f"""
+    You are a Python Coding Agent.
+    
+    CONTEXT:
+    File: {target_file}
+    Content:
+    {current_content}
+    
+    INSTRUCTIONS:
+    1. You are editing an EXISTING file. 
+    2. Your response must contain the **FULL** file content.
+    3. **DO NOT** remove existing functions (`add`, `divide`, etc.) unless explicitly asked.
+    4. **INCLUDE** the existing code in your output, then add the new code.
+    5. Write a pytest unit test.
+    
+    IMPORTANT RULES:
+    - **NO MARKDOWN**: Just write the code blocks.
+    - **TEST IMPORTS**: You MUST import the function like this:
+      `from {import_name} import function_name`
+    
+    FORMAT:
+    THOUGHT: <explain your plan>
+    CODE:
+    ```python
+    # The FULL new content of {target_file}
+    ```
+    TEST:
+    ```python
+    # The pytest code
+    from {import_name} import ...  <-- USE THIS EXACT IMPORT
+    def test_feature():
+        assert ...
+    ```
+    """
 
     messages = [
-        {"role": "system", "content": f"""
-        You are an expert Python engineer. 
-        Your task is to modify the provided code file based on the user's request.
-        
-        Current File Content:
-        {current_content}
-        
-        # --- PROJECT CONTEXT ---
-        {project_context}
-        # -----------------------
-        
-        INSTRUCTIONS:
-        1. **overwrite**: Use this if you need to add IMPORTS at the top AND modify code below, or if the file is small. REWRITE THE ENTIRE FILE.
-        2. **replace**: Use this for surgical edits. `search_text` must match EXACTLY.
-        3. **append**: Use this ONLY for adding new functions at the bottom.
-        
-        CRITICAL: If you use a function from another file (like `to_reverse`), you MUST `from X import Y` at the top!
-        """},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_request}
     ]
-    
-    # Retry Loop
+
     max_retries = 3
     for attempt in range(max_retries):
         print(f"\n🔄 Attempt {attempt + 1}/{max_retries}...")
         
-        completion = client.beta.chat.completions.parse(
+        # 1. Call LLM (No Pydantic, just string)
+        completion = client.chat.completions.create(
             model="llama3",
             messages=messages,
-            response_format=CodeUpdate,
         )
-        result = completion.choices[0].message.parsed
-        print(f"🧠 Plan: {result.thought_process}")
+        response_text = completion.choices[0].message.content
+        
+        # 2. Parse manually
+        result = parse_llm_response(response_text)
+        print(f"🧠 Plan: {result['thought_process']}")
+        
+        # 3. Sanity Check
+        if not result['new_code']:
+            print("⛔ Error: No code block found. Retrying...")
+            messages.append({"role": "assistant", "content": response_text})
+            messages.append({"role": "user", "content": "You forgot the ```python``` block! Please write the code."})
+            continue
 
-        # Check for lazy empty code
-        if not result.new_code.strip() and result.action == "append":
-             print("⛔ Error: Empty code generated.")
-             continue
-
-        # Logic for Applying Changes
-        if result.action == "append":
-            proposed_content = current_content + "\n\n" + result.new_code
-        elif result.action == "replace":
-            if result.search_text not in current_content:
-                print(f"⛔ Error: Could not find search text.")
-                messages.append({"role": "assistant", "content": result.model_dump_json()})
-                messages.append({"role": "user", "content": "I could not find that exact code block. Please provide the EXACT `search_text`."})
-                continue
-            proposed_content = current_content.replace(result.search_text, result.new_code)
-        elif result.action == "overwrite":
-            proposed_content = result.new_code
-
-        # Validation
+        # 4. Save & Test (Default to Overwrite for stability)
+        proposed_content = result['new_code']
+        
+        # Validate
         is_valid, error_msg = validate_python_code(proposed_content)
+        if not is_valid:
+            print(f"\n⛔ Syntax Error:\n{error_msg}")
+            messages.append({"role": "assistant", "content": response_text})
+            messages.append({"role": "user", "content": f"Syntax Error: {error_msg}\nFix the code block."})
+            continue
 
-        if is_valid:
-            print("\n✅ Code passed syntax check.")
-            show_diff(current_content, proposed_content)
+        # Run Tests
+        if result['test_code']:
+            print("🧪 Running Unit Tests...")
+            test_filename = "sandbox/test_temp.py"
+            with open(test_filename, "w") as f:
+                f.write(result['test_code'])
             
-            if input("\n❓ Apply this change? (y/n): ").lower() == 'y':
-                with open(target_file, "w") as f:
-                    f.write(proposed_content)
-                print(f"💾 Saved to {target_file}")
-                return
+            tests_passed, test_output = run_pytest(test_filename)
+            if not tests_passed:
+                print(f"❌ Tests Failed:\n{test_output}")
+                messages.append({"role": "assistant", "content": response_text})
+                messages.append({"role": "user", "content": f"Tests Failed:\n{test_output}\nFix the code."})
+                continue
             else:
-                print("❌ Change rejected.")
-                return
-        else:
-            print(f"\n⛔ Syntax Error: {error_msg}")
-            messages.append({"role": "assistant", "content": result.model_dump_json()}) 
-            messages.append({"role": "user", "content": f"Syntax Error: {error_msg}. Fix it."})
-    
+                print("✅ Tests Passed!")
+
+        # Success!
+        show_diff(current_content, proposed_content)
+        if input("\n❓ Apply this change? (y/n): ").lower() == 'y':
+            with open(target_file, "w") as f:
+                f.write(proposed_content)
+            print(f"💾 Saved to {target_file}")
+            return
+
     print("\n❌ Failed to generate valid code.")
 
 # --- MAIN ENTRY POINT ---
