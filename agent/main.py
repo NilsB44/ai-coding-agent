@@ -3,7 +3,7 @@ import sys
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from tools import read_file, validate_python_code
+from tools import read_file, validate_python_code, show_diff
 
 client = OpenAI(
     base_url="http://localhost:11434/v1",
@@ -99,10 +99,23 @@ def main():
 
         if is_valid:
             print("\n✅ Code passed syntax check.")
-            with open(target_file, "w") as f:
-                f.write(proposed_content)
-            print(f"💾 Saved to {target_file}")
-            return # Success! Exit the loop.
+            
+            # --- NEW: Human Review ---
+            show_diff(current_content, proposed_content)
+            
+            user_approval = input("\n❓ Apply this change? (y/n): ").lower()
+            
+            if user_approval == 'y':
+                with open(target_file, "w") as f:
+                    f.write(proposed_content)
+                print(f"💾 Saved to {target_file}")
+                return # Exit loop (Success)
+            else:
+                print("❌ Change rejected by user.")
+                # Optional: You could ask the user "Why?" and feed it back to the LLM!
+                return # Exit loop (User Cancelled)
+            # -------------------------
+            
         else:
             print(f"\n⛔ Syntax Error: {error_msg}")
             print("🔧 Asking agent to fix it...")
