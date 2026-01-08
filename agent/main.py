@@ -44,7 +44,10 @@ def select_target_file(user_request: str) -> str:
     Available Files:
     {file_list_str}
     
-    If the request requires a new file, provide a suitable name (e.g., 'sandbox/new_feature.py').
+    INSTRUCTIONS:
+    1. Select an existing file if possible.
+    2. If the request requires a new file, provide a suitable name.
+    3. ⚠️ IMPORTANT: All new files MUST be created inside the 'sandbox/' directory (e.g., 'sandbox/fibonacci.py').
     """
     
     print("🤔 Routing request to correct file...")
@@ -67,18 +70,29 @@ def select_target_file(user_request: str) -> str:
 # --- STEP 2: SURGEON ---
 
 def apply_changes(target_file: str, user_request: str):
+    # --- FIX 1: Force Sandbox Path ---
+    # If the router picked "fibonacci.py" (root), force it to "sandbox/fibonacci.py"
+    if not target_file.startswith("sandbox/"):
+        target_file = os.path.join("sandbox", target_file)
+    # ---------------------------------
+
     print(f"🤖 Agent starting on: {target_file}")
     
     # Handle New Files
     if not os.path.exists(target_file):
-        print(f"✨ Creating new file: {target_file}")
+        # Create directory if needed
+        directory = os.path.dirname(target_file)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+        
         with open(target_file, 'w') as f: f.write("")
         current_content = ""
     else:
         current_content = read_file(target_file)
 
+    # Calculate import name (e.g., "sandbox.math_lib")
     import_name = target_file.replace("/", ".").replace(".py", "")
-    
+
     system_prompt = f"""
     You are a Python Coding Agent.
     
@@ -88,11 +102,8 @@ def apply_changes(target_file: str, user_request: str):
     {current_content}
     
     INSTRUCTIONS:
-    1. You are editing an EXISTING file. 
-    2. Your response must contain the **FULL** file content.
-    3. **DO NOT** remove existing functions (`add`, `divide`, etc.) unless explicitly asked.
-    4. **INCLUDE** the existing code in your output, then add the new code.
-    5. Write a pytest unit test.
+    1. Write the new code for this file.
+    2. Write a pytest unit test.
     
     IMPORTANT RULES:
     - **NO MARKDOWN**: Just write the code blocks.
@@ -108,7 +119,7 @@ def apply_changes(target_file: str, user_request: str):
     TEST:
     ```python
     # The pytest code
-    from {import_name} import ...  <-- USE THIS EXACT IMPORT
+    from {import_name} import ...
     def test_feature():
         assert ...
     ```
@@ -123,33 +134,33 @@ def apply_changes(target_file: str, user_request: str):
     for attempt in range(max_retries):
         print(f"\n🔄 Attempt {attempt + 1}/{max_retries}...")
         
-        # 1. Call LLM (No Pydantic, just string)
         completion = client.chat.completions.create(
             model="llama3",
             messages=messages,
         )
         response_text = completion.choices[0].message.content
         
-        # 2. Parse manually
         result = parse_llm_response(response_text)
         print(f"🧠 Plan: {result['thought_process']}")
         
-        # 3. Sanity Check
         if not result['new_code']:
             print("⛔ Error: No code block found. Retrying...")
-            messages.append({"role": "assistant", "content": response_text})
-            messages.append({"role": "user", "content": "You forgot the ```python``` block! Please write the code."})
             continue
 
-        # 4. Save & Test (Default to Overwrite for stability)
         proposed_content = result['new_code']
         
-        # Validate
+        # --- FIX 2: Save BEFORE Testing ---
+        # We must save the file so pytest can actually import it!
+        with open(target_file, "w") as f:
+            f.write(proposed_content)
+        # ----------------------------------
+
+        # Validate Syntax
         is_valid, error_msg = validate_python_code(proposed_content)
         if not is_valid:
             print(f"\n⛔ Syntax Error:\n{error_msg}")
             messages.append({"role": "assistant", "content": response_text})
-            messages.append({"role": "user", "content": f"Syntax Error: {error_msg}\nFix the code block."})
+            messages.append({"role": "user", "content": f"Syntax Error: {error_msg}\nFix the code."})
             continue
 
         # Run Tests
@@ -168,16 +179,24 @@ def apply_changes(target_file: str, user_request: str):
             else:
                 print("✅ Tests Passed!")
 
-        # Success!
+        # Success! Show Diff
         show_diff(current_content, proposed_content)
+        
         if input("\n❓ Apply this change? (y/n): ").lower() == 'y':
-            with open(target_file, "w") as f:
-                f.write(proposed_content)
             print(f"💾 Saved to {target_file}")
             return
+        else:
+            print("❌ Change rejected. Reverting file...")
+            # --- FIX 3: Revert on Rejection ---
+            with open(target_file, "w") as f:
+                f.write(current_content)
+            return
 
-    print("\n❌ Failed to generate valid code.")
-
+    # If all retries fail, revert to original
+    print("\n❌ Failed to generate valid code. Reverting...")
+    with open(target_file, "w") as f:
+        f.write(current_content)
+        
 # --- MAIN ENTRY POINT ---
 
 def main():
