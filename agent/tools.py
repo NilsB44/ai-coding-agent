@@ -1,5 +1,18 @@
+import ast
+
 def read_file(filepath: str):
     with open(filepath, 'r') as f:
-        lines = f.readlines()
-    # Return line numbers so the LLM knows where to edit!
-    return "".join([f"{i+1}: {line}" for i, line in enumerate(lines)])
+        return f.read()
+
+def validate_python_code(code: str) -> tuple[bool, str]:
+    """
+    Validates Python code syntax using AST (Abstract Syntax Tree).
+    Returns: (is_valid, error_message)
+    """
+    try:
+        ast.parse(code)
+        return True, ""
+    except SyntaxError as e:
+        return False, f"Syntax Error on line {e.lineno}: {e.msg}"
+    except Exception as e:
+        return False, f"Validation Error: {str(e)}"

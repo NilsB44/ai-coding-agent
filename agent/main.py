@@ -2,25 +2,13 @@ import os
 import sys
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
+from tools import read_file, validate_python_code
 
-# Import your tool
-from tools import read_file
-
-# 1. Load Environment Variables (Security Best Practice)
-load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    print("Error: OPENAI_API_KEY not found in .env file")
-    sys.exit(1)
-
-client = OpenAI(base_url="http://localhost:11434/v1",
-	api_key="ollama",
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama", 
 )
 
-# 2. Define the Structure (The Interface)
-# This forces the LLM to think before it codes and ensures we get clean code back.
 class CodeUpdate(BaseModel):
     thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
     new_code: str = Field(description="The exact valid Python code to append to the file.")
@@ -28,53 +16,80 @@ class CodeUpdate(BaseModel):
 def main():
     target_file = "sandbox/math_lib.py"
     
-    # User Request (In the future, this comes from CLI input)
-    user_request = "Add a function that divides two numbers. Handle division by zero safely."
+    # --- NEW: DYNAMIC INPUT ---
+    # Check if the user provided an argument (e.g., python main.py "Add fibonacci")
+    if len(sys.argv) > 1:
+        user_request = sys.argv[1]
+    else:
+        # If no argument, ask interactively
+        user_request = input("What feature do you want to add? ")
+        
+    if not user_request.strip():
+        print("Error: Request cannot be empty.")
+        return
+    # --------------------------
 
     print(f"🤖 Agent starting on: {target_file}")
     print(f"📝 Request: {user_request}")
 
-    # 3. Read the current state (Context)
-    try:
-        current_content = read_file(target_file)
-    except FileNotFoundError:
-        print(f"Error: Could not find {target_file}")
-        return
+    current_content = read_file(target_file)
+    if not current_content and not os.path.exists(target_file):
+        current_content = "# Math Library\n"
 
-    # 4. The Prompt
-    # We explicitly tell the LLM it is a code editor.
-    system_prompt = f"""
-    You are an expert Python engineer. 
-    Your task is to append new functionality to the provided code file based on the user's request.
+    # Initialize Chat History
+    messages = [
+        {"role": "system", "content": f"""
+        You are an expert Python engineer. 
+        Your task is to append new functionality to the provided code file based on the user's request.
+        Current File Content:
+        {current_content}
+        """},
+        {"role": "user", "content": user_request}
+    ]
+
+    # --- THE RETRY LOOP ---
+    max_retries = 3
+    for attempt in range(max_retries):
+        print(f"\n🔄 Attempt {attempt + 1}/{max_retries}...")
+        
+        # Call LLM
+        completion = client.beta.chat.completions.parse(
+            model="llama3",
+            messages=messages,
+            response_format=CodeUpdate,
+        )
+        
+        result = completion.choices[0].message.parsed
+        print(f"📝 Generated Code:\n{result.new_code}")
+
+        # --- SAFETY CHECK: EMPTY CODE ---
+        if not result.new_code.strip():
+            print("⛔ Error: The agent returned empty code.")
+            messages.append({"role": "assistant", "content": ""}) 
+            messages.append({"role": "user", "content": "You returned empty code. Please write the actual Python code."})
+            continue # Skip validation and try again
+        # --------------------------------
+
+        # Validate
+        proposed_content = current_content + "\n\n" + result.new_code
+
+        is_valid, error_msg = validate_python_code(proposed_content)
+
+        if is_valid:
+            print("\n✅ Code passed syntax check.")
+            with open(target_file, "w") as f:
+                f.write(proposed_content)
+            print(f"💾 Saved to {target_file}")
+            return # Success! Exit the loop.
+        else:
+            print(f"\n⛔ Syntax Error: {error_msg}")
+            print("🔧 Asking agent to fix it...")
+            
+            # FEEDBACK LOOP: Add the error to the memory
+            messages.append({"role": "assistant", "content": result.new_code}) # What it wrote
+            messages.append({"role": "user", "content": f"Your code had a syntax error: {error_msg}. Please rewrite it correctly."})
     
-    Current File Content:
-    {current_content}
-    """
-
-    # 5. Call OpenAI with Structured Output
-    completion = client.beta.chat.completions.parse(
-        model="llama3",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_request},
-        ],
-        response_format=CodeUpdate,
-    )
-
-    # 6. Parse and Apply
-    result = completion.choices[0].message.parsed
-    
-    print("\n🧠 Agent Reasoning:")
-    print(result.thought_process)
-
-    print("\n💻 Appending Code:")
-    print(result.new_code)
-
-    # Append to file
-    with open(target_file, "a") as f:
-        f.write("\n\n" + result.new_code)
-    
-    print(f"\n✅ Successfully updated {target_file}")
+    print("\n❌ Failed to generate valid code after 3 attempts.")
 
 if __name__ == "__main__":
     main()
