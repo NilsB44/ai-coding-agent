@@ -2,5 +2,5 @@ venv/
 __pycache__/
 *.pyc
 .env
-sandbox/test_temp.py
+.sandbox/
 .pytest_cache/
