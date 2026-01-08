@@ -38,3 +38,45 @@ def show_diff(original: str, proposed: str):
             print(f"\033[91m{line}\033[0m")  # Red for deletions
         else:
             print(line)
+
+def get_file_tree(directory: str = "sandbox") -> str:
+    """
+    Scans the sandbox directory and returns a summary of all files 
+    and their defined functions/classes.
+    """
+    import os
+    summary = []
+    
+    if not os.path.exists(directory):
+        return "Directory not found."
+
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".py"):
+                filepath = os.path.join(root, file)
+                
+                # Read file and parse AST to get function definitions
+                try:
+                    with open(filepath, "r") as f:
+                        content = f.read()
+                    tree = ast.parse(content)
+                    
+                    # Extract function and class names
+                    definitions = []
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.FunctionDef):
+                            definitions.append(f"def {node.name}(...)")
+                        elif isinstance(node, ast.ClassDef):
+                            definitions.append(f"class {node.name}")
+                    
+                    summary.append(f"📄 {file}:")
+                    if definitions:
+                        summary.append("   " + "\n   ".join(definitions))
+                    else:
+                        summary.append("   (No definitions)")
+                    summary.append("") # Empty line for spacing
+                    
+                except Exception:
+                    summary.append(f"📄 {file} (Could not parse)")
+
+    return "\n".join(summary)

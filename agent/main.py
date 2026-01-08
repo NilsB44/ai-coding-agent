@@ -7,7 +7,7 @@ from typing import Optional, Literal
 from dotenv import load_dotenv
 
 # Import tools
-from tools import read_file, validate_python_code, show_diff
+from tools import read_file, validate_python_code, show_diff, get_file_tree
 
 load_dotenv()
 
@@ -24,9 +24,9 @@ class FileSelection(BaseModel):
 
 class CodeUpdate(BaseModel):
     thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
-    action: Literal["append", "replace"] = Field(description="Whether to append new code or replace existing code.")
-    search_text: Optional[str] = Field(description="The exact code block to be replaced (required if action is 'replace').")
-    new_code: str = Field(description="The new code to insert.")
+    action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.") 
+    search_text: Optional[str] = Field(description="Code to replace (for 'replace' action).")
+    new_code: str = Field(description="The new code.")
 
 # --- STEP 1: ROUTER ---
 
@@ -75,6 +75,8 @@ def apply_changes(target_file: str, user_request: str):
     else:
         current_content = read_file(target_file)
 
+    project_context = get_file_tree("sandbox")
+
     messages = [
         {"role": "system", "content": f"""
         You are an expert Python engineer. 
@@ -83,14 +85,20 @@ def apply_changes(target_file: str, user_request: str):
         Current File Content:
         {current_content}
         
+        # --- PROJECT CONTEXT ---
+        {project_context}
+        # -----------------------
+        
         INSTRUCTIONS:
-        1. If you are adding new functionality, set action="append".
-        2. If you are fixing a bug or updating existing code, set action="replace".
-        3. For "replace", `search_text` must match the existing code EXACTLY.
+        1. **overwrite**: Use this if you need to add IMPORTS at the top AND modify code below, or if the file is small. REWRITE THE ENTIRE FILE.
+        2. **replace**: Use this for surgical edits. `search_text` must match EXACTLY.
+        3. **append**: Use this ONLY for adding new functions at the bottom.
+        
+        CRITICAL: If you use a function from another file (like `to_reverse`), you MUST `from X import Y` at the top!
         """},
         {"role": "user", "content": user_request}
     ]
-
+    
     # Retry Loop
     max_retries = 3
     for attempt in range(max_retries):
@@ -119,6 +127,8 @@ def apply_changes(target_file: str, user_request: str):
                 messages.append({"role": "user", "content": "I could not find that exact code block. Please provide the EXACT `search_text`."})
                 continue
             proposed_content = current_content.replace(result.search_text, result.new_code)
+        elif result.action == "overwrite":
+            proposed_content = result.new_code
 
         # Validation
         is_valid, error_msg = validate_python_code(proposed_content)
