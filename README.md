@@ -1,39 +1,58 @@
-# 🤖 Local AI Coding Agent
+# 🤖 AI Coding Agent (Gemini Edition)
 
-An autonomous coding assistant that runs locally using **Ollama (Llama 3)**.
+An autonomous, multi-agent coding assistant powered by **Gemini 2.0 Flash**. This agent is designed for high-scale development with isolated environments and parallel validation.
 
-## 🚀 Setup & Run (The Right Way)
+## 🚀 Key Features
 
-1.  **Start Ollama** (if not running):
+-   **Gemini 2.0 Flash Integration:** Leverages state-of-the-art reasoning and schema extraction for complex coding tasks.
+-   **Agent Isolation (Git Worktrees):** Uses git worktrees to create temporary, isolated environments for every code candidate, preventing conflicts.
+-   **Parallel Validation Pipeline:** Generates multiple code solutions simultaneously and validates them in parallel using concurrent execution and isolated tests.
+-   **Strict Quality Control:** Integrated with `ruff` for linting and `mypy` for strict type checking.
+
+## 🛠️ Setup & Run
+
+1.  **Dependencies:**
+    This project uses `uv` for lightning-fast dependency management.
     ```bash
-    ollama serve
-    # If it says "address already in use", you are good!
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    uv sync
     ```
 
-2.  **Setup Environment**:
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # <--- CRITICAL STEP
-    pip install -r requirements.txt
+2.  **Environment:**
+    Create a `.env` file with your Gemini API key:
+    ```env
+    GEMINI_API_KEY=your_key_here
     ```
 
-3.  **Run Agent**:
+3.  **Run Agent:**
     ```bash
-    python agent/main.py
+    uv run python agent/main.py "Your coding request here"
     ```
 
-## Architecture
+## 📊 Architecture
+
 ```mermaid
 graph TD
-    User([👤 User Request]) --> Router[📍 Router];
-    Router --> Surgeon[🤖 Surgeon Agent];
+    User([👤 User Request]) --> Router[📍 Router (Technical Lead)];
+    Router --> Worktree[🌳 Worktree Manager];
+    Worktree --> Surgeon[🤖 Surgeon Agent (Parallel)];
     
-    subgraph "Self-Healing Loop"
-        Surgeon -->|Writes Code| Validator[🛡️ Syntax Validator];
-        Validator -->|❌ Error| Surgeon;
-        Validator -->|✅ Valid| TestRunner[🧪 Pytest Runner];
-        TestRunner -->|❌ Fail| Surgeon;
+    subgraph "Parallel Validation Pipeline"
+        Surgeon -->|Candidate 1| WT1[🌳 Worktree 1];
+        Surgeon -->|Candidate 2| WT2[🌳 Worktree 2];
+        WT1 -->|Validate| V1[🛡️ Test/Lint];
+        WT2 -->|Validate| V2[🛡️ Test/Lint];
     end
     
-    TestRunner -->|✅ Pass| Review[👀 Human Review];
-    Review -->|Yes| Save[💾 Save to Disk];
+    V1 & V2 -->|✅ Success| Diff[👀 Human Review / Diff];
+    Diff -->|Approved| Save[💾 Merge to Main Repo];
+```
+
+## 🧪 Example
+
+```bash
+uv run python agent/main.py "Create a Bank Transaction Processor in sandbox/bank.py with balance tracking and batch processing."
+```
+
+---
+*Adheres to the global [AI Coding Standards](https://github.com/NilsB44/infra/blob/main/GEMINI.md).*
