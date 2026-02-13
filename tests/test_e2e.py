@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "a
 from main import apply_changes
 
 
-def test_transaction_processor_e2e():
+def test_transaction_processor_e2e() -> None:
     """
     E2E Test: Ask the agent to create a complex transaction processor.
     Verified:
