@@ -1,4 +1,5 @@
-from typing import List, Tuple, Dict, Any
+from typing import Any
+
 
 class Account:
     def __init__(self, owner: str, balance: float = 0.0):
@@ -20,7 +21,7 @@ class Account:
         return self.balance
 
     @staticmethod
-    def batch_process(transactions: List[Tuple['Account', str, float]]) -> Dict[str, Any]:
+    def batch_process(transactions: list[tuple['Account', str, float]]) -> dict[str, Any]:
         summary = {
             "successful": 0,
             "failed": 0,
