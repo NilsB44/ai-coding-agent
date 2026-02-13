@@ -22,7 +22,7 @@ class Account:
 
     @staticmethod
     def batch_process(transactions: list[tuple["Account", str, float]]) -> dict[str, Any]:
-        summary = {"successful": 0, "failed": 0, "errors": []}
+        summary: dict[str, int | list[str]] = {"successful": 0, "failed": 0, "errors": []}
         for account, action, amount in transactions:
             try:
                 if action == "deposit":
@@ -31,8 +31,16 @@ class Account:
                     account.withdraw(amount)
                 else:
                     raise ValueError(f"Unknown action: {action}")
-                summary["successful"] += 1
+                
+                success_count = summary["successful"]
+                if isinstance(success_count, int):
+                    summary["successful"] = success_count + 1
             except Exception as e:
-                summary["failed"] += 1
-                summary["errors"].append(str(e))
+                failed_count = summary["failed"]
+                if isinstance(failed_count, int):
+                    summary["failed"] = failed_count + 1
+                
+                errors_list = summary["errors"]
+                if isinstance(errors_list, list):
+                    errors_list.append(str(e))
         return summary
