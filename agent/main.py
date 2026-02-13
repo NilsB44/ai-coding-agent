@@ -1,7 +1,7 @@
 import glob
 import os
 import sys
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from google import genai
@@ -78,9 +78,9 @@ def select_target_file(user_request: str) -> str:
             },
         )
         result = response.parsed
-        if result:
+        if isinstance(result, FileSelection):
             print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
-            return result.file_name
+            return str(result.file_name)
         return "sandbox/error.py"
     except Exception as e:
         print(f"Routing Error: {e}")
@@ -90,7 +90,15 @@ def select_target_file(user_request: str) -> str:
 # --- STEP 2: SURGEON (With Worktree & Parallel Validation) ---
 
 
-def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str | None) -> dict:
+def validate_candidate(
+
+
+    wt_path: str, target_file: str, code: str, test_code: str | None
+
+
+) -> dict[str, Any]:
+
+
     """Validates a code candidate in its own worktree."""
     rel_target_file = os.path.relpath(target_file, wt_path) if os.path.isabs(target_file) else target_file
     full_target_path = os.path.join(wt_path, rel_target_file)
@@ -121,7 +129,15 @@ def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str
     return {"status": "success", "code": code}
 
 
-def generate_candidates(user_request: str, target_file: str, count: int = 2) -> list[dict]:
+def generate_candidates(
+
+
+    user_request: str, target_file: str, count: int = 2
+
+
+) -> list[dict[str, Any]]:
+
+
     """Generates multiple code candidates using the LLM."""
     current_content = read_file(target_file)
     import_name = target_file.replace("/", ".").replace(".py", "")
