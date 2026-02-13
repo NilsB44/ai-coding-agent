@@ -151,18 +151,11 @@ def apply_changes(target_file: str, user_request: str) -> None:
         assert ...
     ```
     """
-
-    print(f"🚀 Initializing isolated worktrees for {target_file}...")
-    wt_manager = WorktreeManager(".")
-    
-    try:
-        max_attempts = 2
-        candidates = []
-        
-        # Generate multiple candidates in parallel (simulated by sequential generation here for reliability)
-        client = get_client()
-        for i in range(max_attempts):
-            print(f"🧠 Generating candidate {i+1}...")
+    candidates = []
+    client = get_client()
+    for i in range(count):
+        print(f"🧠 Generating candidate {i+1}...")
+        try:
             response = client.models.generate_content(
                 model=MODEL_ID,
                 contents=[system_prompt, user_request],
@@ -174,6 +167,20 @@ def apply_changes(target_file: str, user_request: str) -> None:
             result = parse_llm_response(response_text)
             if result["new_code"]:
                 candidates.append(result)
+        except Exception as e:
+            print(f"Error generating candidate: {e}")
+            
+    return candidates
+
+
+def apply_changes(target_file: str, user_request: str) -> None:
+    """Surgeon: Creates worktrees, validates candidates in parallel, and applies the best one."""
+    
+    print(f"🚀 Initializing isolated worktrees for {target_file}...")
+    wt_manager = WorktreeManager(".")
+    
+    try:
+        candidates = generate_candidates(user_request, target_file)
 
         if not candidates:
             print("❌ No valid code candidates generated.")
