@@ -50,6 +50,7 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
 ]
+ignore = ["W293", "W291", "E501", "SIM108"]
 
 [tool.mypy]
 python_version = "3.12"
