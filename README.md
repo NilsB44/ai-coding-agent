@@ -33,18 +33,18 @@ An autonomous, multi-agent coding assistant powered by **Gemini 2.0 Flash**. Thi
 
 ```mermaid
 graph TD
-    User([👤 User Request]) --> Router[📍 Router (Technical Lead)];
+    User([👤 User Request]) --> Router["📍 Router (Technical Lead)"];
     Router --> Worktree[🌳 Worktree Manager];
-    Worktree --> Surgeon[🤖 Surgeon Agent (Parallel)];
+    Worktree --> Surgeon["🤖 Surgeon Agent (Parallel)"];
     
     subgraph "Parallel Validation Pipeline"
         Surgeon -->|Candidate 1| WT1[🌳 Worktree 1];
         Surgeon -->|Candidate 2| WT2[🌳 Worktree 2];
-        WT1 -->|Validate| V1[🛡️ Test/Lint];
-        WT2 -->|Validate| V2[🛡️ Test/Lint];
+        WT1 -->|Validate| V1["🛡️ Test/Lint"];
+        WT2 -->|Validate| V2["🛡️ Test/Lint"];
     end
     
-    V1 & V2 -->|✅ Success| Diff[👀 Human Review / Diff];
+    V1 & V2 -->|✅ Success| Diff["👀 Human Review / Diff"];
     Diff -->|Approved| Save[💾 Merge to Main Repo];
 ```
 
