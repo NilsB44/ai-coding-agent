@@ -25,7 +25,8 @@ load_dotenv()
 API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_ID = "gemini-2.0-flash"
 
-client = genai.Client(api_key=API_KEY)
+def get_client() -> genai.Client:
+    return genai.Client(api_key=API_KEY)
 
 # --- STRUCTURES ---
 
@@ -62,6 +63,7 @@ def select_target_file(user_request: str) -> str:
 
     print("🤔 Routing request to correct file...")
     try:
+        client = get_client()
         response = client.models.generate_content(
             model=MODEL_ID,
             contents=[system_prompt, user_request],
@@ -159,6 +161,7 @@ def apply_changes(target_file: str, user_request: str) -> None:
         candidates = []
         
         # Generate multiple candidates in parallel (simulated by sequential generation here for reliability)
+        client = get_client()
         for i in range(max_attempts):
             print(f"🧠 Generating candidate {i+1}...")
             response = client.models.generate_content(

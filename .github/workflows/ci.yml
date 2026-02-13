@@ -29,7 +29,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Run Mypy
-        run: PYTHONPATH=. uv run mypy .
+        run: PYTHONPATH=.:sandbox uv run mypy .
 
   test:
     runs-on: ubuntu-latest
@@ -42,4 +42,4 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
       - name: Run tests
-        run: PYTHONPATH=. uv run pytest
+        run: PYTHONPATH=.:sandbox uv run pytest
