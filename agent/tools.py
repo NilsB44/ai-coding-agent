@@ -1,12 +1,12 @@
 import ast
+import concurrent.futures
 import difflib
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 import time
-import concurrent.futures
-from typing import Any, Optional, List, Tuple
+from typing import Any
 
 
 def read_file(filepath: str) -> str:
@@ -95,7 +95,7 @@ def show_diff(original: str, proposed: str) -> None:
             print(line)
 
 
-def run_pytest(test_file: str, workdir: Optional[str] = None) -> tuple[bool, str]:
+def run_pytest(test_file: str, workdir: str | None = None) -> tuple[bool, str]:
     """
     Runs pytest on a specific file and returns (success, output).
     """
@@ -110,7 +110,7 @@ def run_pytest(test_file: str, workdir: Optional[str] = None) -> tuple[bool, str
             text=True,
             timeout=15,
             env=env,
-            cwd=current_dir
+            cwd=current_dir,
         )
         return (result.returncode == 0, result.stdout + result.stderr)
     except Exception as e:
@@ -141,6 +141,7 @@ def parse_llm_response(response: str) -> dict[str, Any]:
                 result["thought_process"] = thought_part.strip()
 
     import re
+
     # Extract all python blocks
     code_blocks = re.findall(r"```python(.*?)```", response, re.DOTALL)
 
@@ -155,7 +156,7 @@ def parse_llm_response(response: str) -> dict[str, Any]:
 
 class WorktreeManager:
     """Manages git worktrees for isolated agent environments."""
-    
+
     def __init__(self, base_repo_path: str):
         self.base_path = os.path.abspath(base_repo_path)
         self.worktrees_root = os.path.join(self.base_path, ".agent_worktrees")
@@ -167,20 +168,20 @@ class WorktreeManager:
         wt_path = os.path.join(self.worktrees_root, name)
         if os.path.exists(wt_path):
             self.cleanup_worktree(name)
-            
+
         branch_name = f"agent-{name}-{int(time.time())}"
-        
+
         try:
             # Create a new branch and worktree
             subprocess.run(
-                ["git", "worktree", "add", "-b", branch_name, wt_path, "main"],
+                ["git", "worktree", "add", "-b", branch_name, wt_path, "HEAD"],
                 cwd=self.base_path,
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
             return wt_path
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to create worktree: {e.stderr.decode()}")
+            raise RuntimeError(f"Failed to create worktree: {e.stderr.decode()}") from e
 
     def cleanup_worktree(self, name: str) -> None:
         """Removes a git worktree and its branch."""
@@ -207,11 +208,11 @@ class WorktreeManager:
 
 class ParallelValidator:
     """Runs multiple validation tasks in parallel."""
-    
+
     def __init__(self, max_workers: int = 4):
         self.max_workers = max_workers
 
-    def run_validations(self, tasks: List[Tuple[Any, Any]]) -> List[Any]:
+    def run_validations(self, tasks: list[tuple[Any, Any]]) -> list[Any]:
         """
         Executes a list of (function, args) tasks in parallel.
         Returns the list of results.
