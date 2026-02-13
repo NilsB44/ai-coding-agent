@@ -21,12 +21,8 @@ class Account:
         return self.balance
 
     @staticmethod
-    def batch_process(transactions: list[tuple['Account', str, float]]) -> dict[str, Any]:
-        summary = {
-            "successful": 0,
-            "failed": 0,
-            "errors": []
-        }
+    def batch_process(transactions: list[tuple["Account", str, float]]) -> dict[str, Any]:
+        summary = {"successful": 0, "failed": 0, "errors": []}
         for account, action, amount in transactions:
             try:
                 if action == "deposit":
