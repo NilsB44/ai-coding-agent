@@ -9,6 +9,7 @@ dependencies = [
     "anyio>=4.12.1",
     "certifi>=2026.1.4",
     "distro>=1.9.0",
+    "google-genai>=1.63.0",
     "h11>=0.16.0",
     "httpcore>=1.0.9",
     "httpx>=0.28.1",
@@ -22,6 +23,7 @@ dependencies = [
     "pydantic-core>=2.41.5",
     "pygments>=2.19.2",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
     "python-dotenv>=1.2.1",
     "sniffio>=1.3.1",
     "tqdm>=4.67.3",
@@ -29,7 +31,7 @@ dependencies = [
     "typing-inspection>=0.4.2",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
@@ -50,7 +52,15 @@ select = [
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
 ]
+ignore = ["W293", "W291", "E501", "SIM108"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.1",
+]
