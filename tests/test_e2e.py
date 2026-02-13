@@ -1,6 +1,6 @@
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Ensure agent directory is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "agent")))
@@ -54,10 +54,10 @@ def test_transaction_processor_e2e():
     # We mock:
     # 1. input -> 'y' to apply
     # 2. select_target_file -> return 'sandbox/bank.py'
-    # 3. get_candidates -> return our mock candidate
+    # 3. generate_candidates -> return our mock candidate
     with patch('builtins.input', side_effect=['y']), \
          patch('main.select_target_file', return_value='sandbox/bank.py'), \
-         patch('main.get_candidates', return_value=[mock_candidate]):
+         patch('main.generate_candidates', return_value=[mock_candidate]):
         
         target_file = 'sandbox/bank.py'
         
