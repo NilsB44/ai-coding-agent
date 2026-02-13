@@ -1,20 +1,32 @@
+import glob
 import os
 import sys
-import glob 
-from openai import OpenAI
-from pydantic import BaseModel, Field
-from typing import Optional, Literal
+import time
+from typing import Any, Literal, List, Optional
+
 from dotenv import load_dotenv
+from google import genai
+from pydantic import BaseModel, Field
 
 # Import tools
-from tools import read_file, validate_python_code, show_diff, get_file_tree, run_pytest, parse_llm_response
+from tools import (
+    parse_llm_response,
+    read_file,
+    run_pytest,
+    show_diff,
+    validate_python_code,
+    WorktreeManager,
+    ParallelValidator
+)
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama", 
-)
+# Configuration
+API_KEY = os.environ.get("GEMINI_API_KEY")
+MODEL_ID = "gemini-2.0-flash"
+
+def get_client() -> genai.Client:
+    return genai.Client(api_key=API_KEY)
 
 # --- STRUCTURES ---
 
@@ -24,7 +36,7 @@ class FileSelection(BaseModel):
 
 class CodeUpdate(BaseModel):
     thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
-    action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.") 
+    action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.")
     search_text: Optional[str] = Field(description="Code to replace (for 'replace' action).")
     new_code: str = Field(description="The new code.")
     test_code: Optional[str] = Field(description="A corresponding pytest unit test to verify this code works. (Optional)")
@@ -33,10 +45,9 @@ class CodeUpdate(BaseModel):
 
 def select_target_file(user_request: str) -> str:
     """Decides which file to edit based on the user request."""
-    
     files = glob.glob("sandbox/*.py")
     file_list_str = "\n".join(files)
-    
+
     system_prompt = f"""
     You are a Senior Technical Lead.
     Your job is to select the correct file to edit based on the user's request.
@@ -47,50 +58,67 @@ def select_target_file(user_request: str) -> str:
     INSTRUCTIONS:
     1. Select an existing file if possible.
     2. If the request requires a new file, provide a suitable name.
-    3. ⚠️ IMPORTANT: All new files MUST be created inside the 'sandbox/' directory (e.g., 'sandbox/fibonacci.py').
+    3. ⚠️ IMPORTANT: All new files MUST be created inside the 'sandbox/' directory (e.g., 'sandbox/processor.py').
     """
-    
+
     print("🤔 Routing request to correct file...")
     try:
-        completion = client.beta.chat.completions.parse(
-            model="llama3",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_request},
-            ],
-            response_format=FileSelection,
+        client = get_client()
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[system_prompt, user_request],
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': FileSelection,
+            }
         )
-        result = completion.choices[0].message.parsed
-        print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
-        return result.file_name
+        result = response.parsed
+        if result:
+            print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
+            return result.file_name
+        return "sandbox/error.py"
     except Exception as e:
         print(f"Routing Error: {e}")
         return "sandbox/error.py"
 
-# --- STEP 2: SURGEON ---
+# --- STEP 2: SURGEON (With Worktree & Parallel Validation) ---
 
-def apply_changes(target_file: str, user_request: str):
-    # --- FIX 1: Force Sandbox Path ---
-    # If the router picked "fibonacci.py" (root), force it to "sandbox/fibonacci.py"
+def validate_candidate(wt_path: str, target_file: str, code: str, test_code: Optional[str]) -> dict:
+    """Validates a code candidate in its own worktree."""
+    rel_target_file = os.path.relpath(target_file, wt_path) if os.path.isabs(target_file) else target_file
+    full_target_path = os.path.join(wt_path, rel_target_file)
+    
+    # Ensure directory exists in worktree
+    os.makedirs(os.path.dirname(full_target_path), exist_ok=True)
+    
+    # Save code
+    with open(full_target_path, "w") as f:
+        f.write(code)
+        
+    # Syntax check
+    is_valid, error_msg = validate_python_code(code)
+    if not is_valid:
+        return {"status": "syntax_error", "message": error_msg}
+        
+    # Run tests
+    if test_code:
+        test_filename = os.path.join(wt_path, "sandbox/test_candidate.py")
+        os.makedirs(os.path.dirname(test_filename), exist_ok=True)
+        with open(test_filename, "w") as f:
+            f.write(test_code)
+            
+        tests_passed, test_output = run_pytest("sandbox/test_candidate.py", workdir=wt_path)
+        if not tests_passed:
+            return {"status": "test_failure", "message": test_output}
+            
+    return {"status": "success", "code": code}
+
+def apply_changes(target_file: str, user_request: str) -> None:
+    # Force sandbox path
     if not target_file.startswith("sandbox/"):
         target_file = os.path.join("sandbox", target_file)
-    # ---------------------------------
 
-    print(f"🤖 Agent starting on: {target_file}")
-    
-    # Handle New Files
-    if not os.path.exists(target_file):
-        # Create directory if needed
-        directory = os.path.dirname(target_file)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory)
-        
-        with open(target_file, 'w') as f: f.write("")
-        current_content = ""
-    else:
-        current_content = read_file(target_file)
-
-    # Calculate import name (e.g., "sandbox.math_lib")
+    current_content = read_file(target_file)
     import_name = target_file.replace("/", ".").replace(".py", "")
 
     system_prompt = f"""
@@ -125,90 +153,81 @@ def apply_changes(target_file: str, user_request: str):
     ```
     """
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_request}
-    ]
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        print(f"\n🔄 Attempt {attempt + 1}/{max_retries}...")
+    print(f"🚀 Initializing isolated worktrees for {target_file}...")
+    wt_manager = WorktreeManager(".")
+    
+    try:
+        max_attempts = 2
+        candidates = []
         
-        completion = client.chat.completions.create(
-            model="llama3",
-            messages=messages,
-        )
-        response_text = completion.choices[0].message.content
-        
-        result = parse_llm_response(response_text)
-        print(f"🧠 Plan: {result['thought_process']}")
-        
-        if not result['new_code']:
-            print("⛔ Error: No code block found. Retrying...")
-            continue
-
-        proposed_content = result['new_code']
-        
-        # --- FIX 2: Save BEFORE Testing ---
-        # We must save the file so pytest can actually import it!
-        with open(target_file, "w") as f:
-            f.write(proposed_content)
-        # ----------------------------------
-
-        # Validate Syntax
-        is_valid, error_msg = validate_python_code(proposed_content)
-        if not is_valid:
-            print(f"\n⛔ Syntax Error:\n{error_msg}")
-            messages.append({"role": "assistant", "content": response_text})
-            messages.append({"role": "user", "content": f"Syntax Error: {error_msg}\nFix the code."})
-            continue
-
-        # Run Tests
-        if result['test_code']:
-            print("🧪 Running Unit Tests...")
-            test_filename = "sandbox/test_temp.py"
-            with open(test_filename, "w") as f:
-                f.write(result['test_code'])
+        # Generate multiple candidates in parallel (simulated by sequential generation here for reliability)
+        client = get_client()
+        for i in range(max_attempts):
+            print(f"🧠 Generating candidate {i+1}...")
+            response = client.models.generate_content(
+                model=MODEL_ID,
+                contents=[system_prompt, user_request],
+            )
+            response_text = response.text
+            if not response_text: continue
             
-            tests_passed, test_output = run_pytest(test_filename)
-            if not tests_passed:
-                print(f"❌ Tests Failed:\n{test_output}")
-                messages.append({"role": "assistant", "content": response_text})
-                messages.append({"role": "user", "content": f"Tests Failed:\n{test_output}\nFix the code."})
-                continue
+            result = parse_llm_response(response_text)
+            if result["new_code"]:
+                candidates.append(result)
+
+        if not candidates:
+            print("❌ No valid code candidates generated.")
+            return
+
+        # Parallel Validation
+        print(f"🧪 Validating {len(candidates)} candidates in parallel worktrees...")
+        validator = ParallelValidator(max_workers=len(candidates))
+        validation_tasks = []
+        wt_paths = []
+        
+        for i, cand in enumerate(candidates):
+            wt_path = wt_manager.create_worktree(f"val-{i}")
+            wt_paths.append(wt_path)
+            validation_tasks.append((validate_candidate, (wt_path, target_file, cand["new_code"], cand["test_code"])))
+            
+        results = validator.run_validations(validation_tasks)
+        
+        # Find first successful result
+        successful_cand = None
+        for res in results:
+            if res["status"] == "success":
+                successful_cand = res
+                break
+        
+        if successful_cand:
+            print("✅ Found a successful candidate!")
+            proposed_content = successful_cand["code"]
+            show_diff(current_content, proposed_content)
+            
+            if input("\n❓ Apply this change to main repository? (y/n): ").lower() == 'y':
+                with open(target_file, "w") as f:
+                    f.write(proposed_content)
+                print(f"💾 Saved to {target_file}")
             else:
-                print("✅ Tests Passed!")
-
-        # Success! Show Diff
-        show_diff(current_content, proposed_content)
-        
-        if input("\n❓ Apply this change? (y/n): ").lower() == 'y':
-            print(f"💾 Saved to {target_file}")
-            return
+                print("❌ Change rejected.")
         else:
-            print("❌ Change rejected. Reverting file...")
-            # --- FIX 3: Revert on Rejection ---
-            with open(target_file, "w") as f:
-                f.write(current_content)
-            return
+            print("❌ All candidates failed validation.")
+            for i, res in enumerate(results):
+                print(f"Candidate {i+1} failure: {res['status']} - {res.get('message', '')[:100]}...")
 
-    # If all retries fail, revert to original
-    print("\n❌ Failed to generate valid code. Reverting...")
-    with open(target_file, "w") as f:
-        f.write(current_content)
-        
+    finally:
+        print("🧹 Cleaning up worktrees...")
+        wt_manager.cleanup_all()
+
 # --- MAIN ENTRY POINT ---
 
-def main():
+def main() -> None:
     if len(sys.argv) > 1:
-        user_request = sys.argv[1]
+        user_request = " ".join(sys.argv[1:])
     else:
         user_request = input("What feature do you want to add? ")
 
-    # 1. Route
     target_file = select_target_file(user_request)
-    
-    # 2. Act
     apply_changes(target_file, user_request)
 
 if __name__ == "__main__":
