@@ -1,6 +1,7 @@
 import pytest
 from bank import Account
 
+
 def test_account_operations() -> None:
     acc = Account("Nils", 100.0)
     assert acc.deposit(50.0) == 150.0

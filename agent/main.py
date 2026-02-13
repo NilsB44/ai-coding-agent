@@ -1,8 +1,7 @@
 import glob
 import os
 import sys
-import time
-from typing import Any, Literal, List, Optional
+from typing import Literal
 
 from dotenv import load_dotenv
 from google import genai
@@ -10,13 +9,13 @@ from pydantic import BaseModel, Field
 
 # Import tools
 from tools import (
+    ParallelValidator,
+    WorktreeManager,
     parse_llm_response,
     read_file,
     run_pytest,
     show_diff,
     validate_python_code,
-    WorktreeManager,
-    ParallelValidator
 )
 
 load_dotenv()
@@ -37,9 +36,9 @@ class FileSelection(BaseModel):
 class CodeUpdate(BaseModel):
     thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
     action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.")
-    search_text: Optional[str] = Field(description="Code to replace (for 'replace' action).")
+    search_text: str | None = Field(description="Code to replace (for 'replace' action).")
     new_code: str = Field(description="The new code.")
-    test_code: Optional[str] = Field(description="A corresponding pytest unit test to verify this code works. (Optional)")
+    test_code: str | None = Field(description="A corresponding pytest unit test to verify this code works. (Optional)")
 
 # --- STEP 1: ROUTER ---
 
@@ -83,7 +82,7 @@ def select_target_file(user_request: str) -> str:
 
 # --- STEP 2: SURGEON (With Worktree & Parallel Validation) ---
 
-def validate_candidate(wt_path: str, target_file: str, code: str, test_code: Optional[str]) -> dict:
+def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str | None) -> dict:
     """Validates a code candidate in its own worktree."""
     rel_target_file = os.path.relpath(target_file, wt_path) if os.path.isabs(target_file) else target_file
     full_target_path = os.path.join(wt_path, rel_target_file)
@@ -169,7 +168,8 @@ def apply_changes(target_file: str, user_request: str) -> None:
                 contents=[system_prompt, user_request],
             )
             response_text = response.text
-            if not response_text: continue
+            if not response_text:
+                continue
             
             result = parse_llm_response(response_text)
             if result["new_code"]:
