@@ -1,12 +1,12 @@
 import ast
+import concurrent.futures
 import difflib
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 import time
-import concurrent.futures
-from typing import Any, Optional, List, Tuple
+from typing import Any
 
 
 def read_file(filepath: str) -> str:
@@ -95,7 +95,7 @@ def show_diff(original: str, proposed: str) -> None:
             print(line)
 
 
-def run_pytest(test_file: str, workdir: Optional[str] = None) -> tuple[bool, str]:
+def run_pytest(test_file: str, workdir: str | None = None) -> tuple[bool, str]:
     """
     Runs pytest on a specific file and returns (success, output).
     """
@@ -180,7 +180,7 @@ class WorktreeManager:
             )
             return wt_path
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to create worktree: {e.stderr.decode()}")
+            raise RuntimeError(f"Failed to create worktree: {e.stderr.decode()}") from e
 
     def cleanup_worktree(self, name: str) -> None:
         """Removes a git worktree and its branch."""
@@ -211,7 +211,7 @@ class ParallelValidator:
     def __init__(self, max_workers: int = 4):
         self.max_workers = max_workers
 
-    def run_validations(self, tasks: List[Tuple[Any, Any]]) -> List[Any]:
+    def run_validations(self, tasks: list[tuple[Any, Any]]) -> list[Any]:
         """
         Executes a list of (function, args) tasks in parallel.
         Returns the list of results.
