@@ -29,7 +29,7 @@ dependencies = [
     "typing-inspection>=0.4.2",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
