@@ -3,9 +3,10 @@ import difflib
 import os
 import subprocess
 import sys
+from typing import Any
 
 
-def read_file(filepath: str):
+def read_file(filepath: str) -> str:
     """Reads a file and returns its content."""
     try:
         with open(filepath) as f:
@@ -76,7 +77,7 @@ def validate_python_code(code: str) -> tuple[bool, str]:
         return False, f"Validation Error: {str(e)}"
 
 
-def show_diff(original: str, proposed: str):
+def show_diff(original: str, proposed: str) -> None:
     """
     Prints a colored diff between the original and proposed strings.
     """
@@ -112,7 +113,7 @@ def run_pytest(test_file: str) -> tuple[bool, str]:
         return (False, f"Test Execution Failed: {str(e)}")
 
 
-def parse_llm_response(response: str) -> dict:
+def parse_llm_response(response: str) -> dict[str, Any]:
     """
     Extracts code blocks and thought process from raw LLM text.
     Expected format:

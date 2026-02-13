@@ -1,7 +1,7 @@
 import glob
 import os
 import sys
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -66,8 +66,10 @@ def select_target_file(user_request: str) -> str:
             response_format=FileSelection,
         )
         result = completion.choices[0].message.parsed
-        print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
-        return result.file_name
+        if result:
+            print(f"📂 Selected File: {result.file_name} ({result.thought_process})")
+            return result.file_name
+        return "sandbox/error.py"
     except Exception as e:
         print(f"Routing Error: {e}")
         return "sandbox/error.py"
@@ -76,7 +78,7 @@ def select_target_file(user_request: str) -> str:
 # --- STEP 2: SURGEON ---
 
 
-def apply_changes(target_file: str, user_request: str):
+def apply_changes(target_file: str, user_request: str) -> None:
     # --- FIX 1: Force Sandbox Path ---
     # If the router picked "fibonacci.py" (root), force it to "sandbox/fibonacci.py"
     if not target_file.startswith("sandbox/"):
@@ -133,7 +135,10 @@ def apply_changes(target_file: str, user_request: str):
     ```
     """
 
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_request}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_request},
+    ]
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -141,9 +146,11 @@ def apply_changes(target_file: str, user_request: str):
 
         completion = client.chat.completions.create(
             model="llama3",
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
         )
         response_text = completion.choices[0].message.content
+        if not response_text:
+            continue
 
         result = parse_llm_response(response_text)
         print(f"🧠 Plan: {result['thought_process']}")
@@ -152,7 +159,7 @@ def apply_changes(target_file: str, user_request: str):
             print("⛔ Error: No code block found. Retrying...")
             continue
 
-        proposed_content = result["new_code"]
+        proposed_content = str(result["new_code"])
 
         # --- FIX 2: Save BEFORE Testing ---
         # We must save the file so pytest can actually import it!
@@ -173,7 +180,7 @@ def apply_changes(target_file: str, user_request: str):
             print("🧪 Running Unit Tests...")
             test_filename = "sandbox/test_temp.py"
             with open(test_filename, "w") as f:
-                f.write(result["test_code"])
+                f.write(str(result["test_code"]))
 
             tests_passed, test_output = run_pytest(test_filename)
             if not tests_passed:
@@ -206,7 +213,7 @@ def apply_changes(target_file: str, user_request: str):
 # --- MAIN ENTRY POINT ---
 
 
-def main():
+def main() -> None:
     if len(sys.argv) > 1:
         user_request = sys.argv[1]
     else:

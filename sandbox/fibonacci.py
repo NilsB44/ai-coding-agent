@@ -1,4 +1,4 @@
-def fibonacci(n):
+def fibonacci(n: int) -> list[int]:
     if n <= 0:
         return []
     elif n == 1:
