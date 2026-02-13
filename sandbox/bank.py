@@ -31,7 +31,7 @@ class Account:
                     account.withdraw(amount)
                 else:
                     raise ValueError(f"Unknown action: {action}")
-                
+
                 success_count = summary["successful"]
                 if isinstance(success_count, int):
                     summary["successful"] = success_count + 1
@@ -39,7 +39,7 @@ class Account:
                 failed_count = summary["failed"]
                 if isinstance(failed_count, int):
                     summary["failed"] = failed_count + 1
-                
+
                 errors_list = summary["errors"]
                 if isinstance(errors_list, list):
                     errors_list.append(str(e))
