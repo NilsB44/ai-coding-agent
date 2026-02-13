@@ -48,28 +48,29 @@ def test_transaction_processor_e2e():
             "    a = Account('test', 100)\n"
             "    a.deposit(50)\n"
             "    assert a.balance == 150\n"
-        )
+        ),
     }
 
     # We mock:
     # 1. input -> 'y' to apply
     # 2. select_target_file -> return 'sandbox/bank.py'
     # 3. generate_candidates -> return our mock candidate
-    with patch('builtins.input', side_effect=['y']), \
-         patch('main.select_target_file', return_value='sandbox/bank.py'), \
-         patch('main.generate_candidates', return_value=[mock_candidate]):
-        
-        target_file = 'sandbox/bank.py'
-        
+    with (
+        patch("builtins.input", side_effect=["y"]),
+        patch("main.select_target_file", return_value="sandbox/bank.py"),
+        patch("main.generate_candidates", return_value=[mock_candidate]),
+    ):
+        target_file = "sandbox/bank.py"
+
         # This will run the worktree creation, validation, and application
         apply_changes(target_file, user_request)
-        
+
         # Verify the file was actually created and has content
         full_path = os.path.join(os.getcwd(), target_file)
         # In some CI environments we might be in the root or RAG root
         if not os.path.exists(full_path):
-             full_path = os.path.join(os.getcwd(), "RAG", target_file)
-             
+            full_path = os.path.join(os.getcwd(), "RAG", target_file)
+
         assert os.path.exists(full_path)
         with open(full_path) as f:
             content = f.read()
@@ -77,16 +78,18 @@ def test_transaction_processor_e2e():
         assert "deposit" in content
         assert "withdraw" in content
 
+
 if __name__ == "__main__":
     # Clean up any existing bank.py before test
     if os.path.exists("sandbox/bank.py"):
         os.remove("sandbox/bank.py")
-    
+
     try:
         test_transaction_processor_e2e()
         print("\n✅ E2E TEST PASSED!")
     except Exception as e:
         print(f"\n❌ E2E TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -34,25 +34,15 @@ def get_client() -> genai.Client:
 
 class FileSelection(BaseModel):
     thought_process: str = Field(description="Reasoning for why this file was chosen.")
-    file_name: str = Field(
-        description="The existing file to edit, or a new file name to create."
-    )
+    file_name: str = Field(description="The existing file to edit, or a new file name to create.")
 
 
 class CodeUpdate(BaseModel):
-    thought_process: str = Field(
-        description="Analyze the request and explain what needs to be changed."
-    )
-    action: Literal["append", "replace", "overwrite"] = Field(
-        description="Action to perform."
-    )
-    search_text: str | None = Field(
-        description="Code to replace (for 'replace' action)."
-    )
+    thought_process: str = Field(description="Analyze the request and explain what needs to be changed.")
+    action: Literal["append", "replace", "overwrite"] = Field(description="Action to perform.")
+    search_text: str | None = Field(description="Code to replace (for 'replace' action).")
     new_code: str = Field(description="The new code.")
-    test_code: str | None = Field(
-        description="A corresponding pytest unit test to verify this code works. (Optional)"
-    )
+    test_code: str | None = Field(description="A corresponding pytest unit test to verify this code works. (Optional)")
 
 
 # --- STEP 1: ROUTER ---
@@ -100,15 +90,9 @@ def select_target_file(user_request: str) -> str:
 # --- STEP 2: SURGEON (With Worktree & Parallel Validation) ---
 
 
-def validate_candidate(
-    wt_path: str, target_file: str, code: str, test_code: str | None
-) -> dict:
+def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str | None) -> dict:
     """Validates a code candidate in its own worktree."""
-    rel_target_file = (
-        os.path.relpath(target_file, wt_path)
-        if os.path.isabs(target_file)
-        else target_file
-    )
+    rel_target_file = os.path.relpath(target_file, wt_path) if os.path.isabs(target_file) else target_file
     full_target_path = os.path.join(wt_path, rel_target_file)
 
     # Ensure directory exists in worktree
@@ -130,18 +114,14 @@ def validate_candidate(
         with open(test_filename, "w") as f:
             f.write(test_code)
 
-        tests_passed, test_output = run_pytest(
-            "sandbox/test_candidate.py", workdir=wt_path
-        )
+        tests_passed, test_output = run_pytest("sandbox/test_candidate.py", workdir=wt_path)
         if not tests_passed:
             return {"status": "test_failure", "message": test_output}
 
     return {"status": "success", "code": code}
 
 
-def generate_candidates(
-    user_request: str, target_file: str, count: int = 2
-) -> list[dict]:
+def generate_candidates(user_request: str, target_file: str, count: int = 2) -> list[dict]:
     """Generates multiple code candidates using the LLM."""
     current_content = read_file(target_file)
     import_name = target_file.replace("/", ".").replace(".py", "")
@@ -180,7 +160,7 @@ def generate_candidates(
     candidates = []
     client = get_client()
     for i in range(count):
-        print(f"🧠 Generating candidate {i+1}...")
+        print(f"🧠 Generating candidate {i + 1}...")
         try:
             response = client.models.generate_content(
                 model=MODEL_ID,
@@ -248,10 +228,7 @@ def apply_changes(target_file: str, user_request: str) -> None:
             proposed_content = successful_cand["code"]
             show_diff(current_content, proposed_content)
 
-            if (
-                input("\n❓ Apply this change to main repository? (y/n): ").lower()
-                == "y"
-            ):
+            if input("\n❓ Apply this change to main repository? (y/n): ").lower() == "y":
                 with open(target_file, "w") as f:
                     f.write(proposed_content)
                 print(f"💾 Saved to {target_file}")
@@ -260,9 +237,7 @@ def apply_changes(target_file: str, user_request: str) -> None:
         else:
             print("❌ All candidates failed validation.")
             for i, res in enumerate(results):
-                print(
-                    f"Candidate {i+1} failure: {res['status']} - {res.get('message', '')[:100]}..."
-                )
+                print(f"Candidate {i + 1} failure: {res['status']} - {res.get('message', '')[:100]}...")
 
     finally:
         print("🧹 Cleaning up worktrees...")
