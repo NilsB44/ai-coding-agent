@@ -138,48 +138,105 @@ def apply_changes(target_file: str, user_request: str) -> None:
     - **TEST IMPORTS**: You MUST import the function like this:
       `from {import_name} import function_name`
     
-    FORMAT:
-    THOUGHT: <explain your plan>
-    CODE:
-    ```python
-    # The FULL new content of {target_file}
-    ```
-    TEST:
-    ```python
-    # The pytest code
-    from {import_name} import ...
-    def test_feature():
-        assert ...
-    ```
-    """
-
-    print(f"🚀 Initializing isolated worktrees for {target_file}...")
-    wt_manager = WorktreeManager(".")
+        FORMAT:
     
-    try:
-        max_attempts = 2
+        THOUGHT: <explain your plan>
+    
+        CODE:
+    
+        ```python
+    
+        # The FULL new content of {target_file}
+    
+        ```
+    
+        TEST:
+    
+        ```python
+    
+        # The pytest code
+    
+        from {import_name} import ...
+    
+        def test_feature():
+    
+            assert ...
+    
+        ```
+    
+        """
+    
         candidates = []
-        
-        # Generate multiple candidates in parallel (simulated by sequential generation here for reliability)
+    
         client = get_client()
-        for i in range(max_attempts):
+    
+        for i in range(count):
+    
             print(f"🧠 Generating candidate {i+1}...")
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=[system_prompt, user_request],
-            )
-            response_text = response.text
-            if not response_text: continue
-            
-            result = parse_llm_response(response_text)
-            if result["new_code"]:
-                candidates.append(result)
-
-        if not candidates:
-            print("❌ No valid code candidates generated.")
-            return
-
-        # Parallel Validation
+    
+            try:
+    
+                response = client.models.generate_content(
+    
+                    model=MODEL_ID,
+    
+                    contents=[system_prompt, user_request],
+    
+                )
+    
+                response_text = response.text
+    
+                if not response_text:
+    
+                    continue
+    
+                
+    
+                result = parse_llm_response(response_text)
+    
+                if result["new_code"]:
+    
+                    candidates.append(result)
+    
+            except Exception as e:
+    
+                print(f"Error generating candidate: {e}")
+    
+                
+    
+        return candidates
+    
+    
+    
+    
+    
+    def apply_changes(target_file: str, user_request: str) -> None:
+    
+        """Surgeon: Creates worktrees, validates candidates in parallel, and applies the best one."""
+    
+        
+    
+        print(f"🚀 Initializing isolated worktrees for {target_file}...")
+    
+        wt_manager = WorktreeManager(".")
+    
+        
+    
+        try:
+    
+            candidates = generate_candidates(user_request, target_file)
+    
+    
+    
+            if not candidates:
+    
+                print("❌ No valid code candidates generated.")
+    
+                return
+    
+    
+    
+            # Parallel Validation
         print(f"🧪 Validating {len(candidates)} candidates in parallel worktrees...")
         validator = ParallelValidator(max_workers=len(candidates))
         validation_tasks = []
