@@ -1,6 +1,7 @@
-from sandbox.fibonacci import fibonacci
+from fibonacci import fibonacci
 
-def test_fibonacci():
+
+def test_fibonacci() -> None:
     assert fibonacci(0) == []
     assert fibonacci(1) == [0]
     assert fibonacci(2) == [0, 1]
