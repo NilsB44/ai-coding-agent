@@ -1,8 +1,8 @@
 import glob
+import logging
 import os
 import sys
-import logging
-from typing import Any, Literal, List, Dict
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from google import genai
@@ -58,7 +58,7 @@ class CodeUpdate(BaseModel):
 
 def select_target_file(user_request: str) -> str:
     """Decides which file to edit based on the user request."""
-    files: List[str] = glob.glob("sandbox/*.py")
+    files: list[str] = glob.glob("sandbox/*.py")
     file_list_str: str = "\n".join(files)
 
     system_prompt: str = f"""
@@ -98,7 +98,7 @@ def select_target_file(user_request: str) -> str:
 # --- STEP 2: SURGEON (With Worktree & Parallel Validation) ---
 
 
-def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str | None) -> Dict[str, Any]:
+def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str | None) -> dict[str, Any]:
     """Validates a code candidate in its own worktree."""
     rel_target_file: str = os.path.relpath(target_file, wt_path) if os.path.isabs(target_file) else target_file
     full_target_path: str = os.path.join(wt_path, rel_target_file)
@@ -135,7 +135,7 @@ def validate_candidate(wt_path: str, target_file: str, code: str, test_code: str
     return {"status": "success", "code": code}
 
 
-def generate_candidates(user_request: str, target_file: str, count: int = 2) -> List[Dict[str, Any]]:
+def generate_candidates(user_request: str, target_file: str, count: int = 2) -> list[dict[str, Any]]:
     """Generates multiple code candidates using the LLM."""
     current_content: str = read_file(target_file)
     import_name: str = target_file.replace("/", ".").replace(".py", "")
@@ -171,7 +171,7 @@ def generate_candidates(user_request: str, target_file: str, count: int = 2) -> 
         assert ...
     ```
     """
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     client: genai.Client = get_client()
     for i in range(count):
         logger.info(f"🧠 Generating candidate {i + 1}...")
@@ -184,7 +184,7 @@ def generate_candidates(user_request: str, target_file: str, count: int = 2) -> 
             if not response_text:
                 continue
 
-            result: Dict[str, Any] = parse_llm_response(response_text)
+            result: dict[str, Any] = parse_llm_response(response_text)
             if result.get("new_code"):
                 candidates.append(result)
         except Exception as e:
@@ -206,7 +206,7 @@ def apply_changes(target_file: str, user_request: str) -> None:
     wt_manager: WorktreeManager = WorktreeManager(".")
 
     try:
-        candidates: List[Dict[str, Any]] = generate_candidates(user_request, target_file)
+        candidates: list[dict[str, Any]] = generate_candidates(user_request, target_file)
 
         if not candidates:
             logger.error("❌ No valid code candidates generated.")
@@ -215,8 +215,8 @@ def apply_changes(target_file: str, user_request: str) -> None:
         # Parallel Validation
         logger.info(f"🧪 Validating {len(candidates)} candidates in parallel worktrees...")
         validator: ParallelValidator = ParallelValidator(max_workers=len(candidates))
-        validation_tasks: List[Any] = []
-        wt_paths: List[str] = []
+        validation_tasks: list[Any] = []
+        wt_paths: list[str] = []
 
         for i, cand in enumerate(candidates):
             wt_path: str = wt_manager.create_worktree(f"val-{i}")
@@ -228,10 +228,10 @@ def apply_changes(target_file: str, user_request: str) -> None:
                 )
             )
 
-        results: List[Dict[str, Any]] = validator.run_validations(validation_tasks)
+        results: list[dict[str, Any]] = validator.run_validations(validation_tasks)
 
         # Find first successful result
-        successful_cand: Dict[str, Any] | None = None
+        successful_cand: dict[str, Any] | None = None
         for res in results:
             if res["status"] == "success":
                 successful_cand = res

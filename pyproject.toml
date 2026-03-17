@@ -58,6 +58,11 @@ ignore = ["W293", "W291", "E501", "SIM108"]
 python_version = "3.12"
 strict = true
 
+[[tool.mypy.overrides]]
+module = "sandbox.*"
+ignore_errors = true
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
